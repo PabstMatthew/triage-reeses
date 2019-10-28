@@ -1,0 +1,13 @@
+obj/
+bin/
+eval-scripts/
+scripts/
+sim_list/
+tracer/
+*.txt
+run_all.sh
+prefetcher/l2c_prefetcher.cc
+prefetcher/l1d_prefetcher.cc
+replacement/llc_replacement.cc
+cloudsuite_param.h
+

@@ -1,0 +1,149 @@
+
+#include "cache.h"
+#include "triage.h"
+#include <map>
+
+#define MAX_ALLOWED_DEGREE 8
+
+TriageConfig conf[NUM_CPUS];
+Triage data[NUM_CPUS];
+uint64_t last_address[NUM_CPUS];
+
+std::set<uint64_t>unique_addr;
+std::map<uint64_t, uint64_t> total_usage_count;
+std::map<uint64_t, uint64_t> actual_usage_count;
+
+//16K entries = 64KB
+void CACHE::l1d_prefetcher_initialize() 
+{
+    cout << NUM_CPUS << endl;
+//    cpu = 0;
+    conf[cpu].lookahead = 1;
+    conf[cpu].degree = 1;
+//    conf[cpu].on_chip_size = 4096;
+//    conf[cpu].on_chip_size = 8192;
+//    conf[cpu].on_chip_size = 16384;  //64K
+//    conf[cpu].on_chip_size = 32768;  //128KB
+//    conf[cpu].on_chip_size = 65536;  //256KB
+//    conf[cpu].on_chip_size = 131072; //512KB
+    conf[cpu].on_chip_size = 262144; //1MB
+//    conf[cpu].on_chip_size = 524288;  //2MB
+    conf[cpu].on_chip_assoc = 8;
+//    conf[cpu].on_chip_assoc = 524288;
+    conf[cpu].training_unit_size = 10000000;
+//    conf[cpu].repl = TRIAGE_REPL_LRU;
+//    conf[cpu].repl = TRIAGE_REPL_HAWKEYE;
+    conf[cpu].repl = TRIAGE_REPL_PERFECT;
+    conf[cpu].use_dynamic_assoc = true;
+//    conf[cpu].use_dynamic_assoc = false;
+
+    data[cpu].set_conf(&conf[cpu]);
+}
+
+void CACHE::l1d_prefetcher_operate(uint64_t addr, uint64_t pc, uint8_t cache_hit, uint8_t type)
+{
+//    cpu = 0;
+    if (type != LOAD) {
+        return;
+    }
+
+    //if (cache_hit) {
+    //    return;
+    //}
+
+    addr = (addr >> 6) << 6;
+    if(addr == last_address[cpu])
+        return;
+    last_address[cpu] = addr;
+    unique_addr.insert(addr);
+
+
+    int i;
+    uint64_t prefetch_addr_list[MAX_ALLOWED_DEGREE];
+    for (i = 0; i < MAX_ALLOWED_DEGREE; ++i) {
+        prefetch_addr_list[i] = 0;
+    }
+    data[cpu].calculatePrefetch(pc, addr, cache_hit, prefetch_addr_list,
+            MAX_ALLOWED_DEGREE, cpu);
+
+    int prefetched = 0;
+    for (i = 0; i < MAX_ALLOWED_DEGREE; ++i) {
+        if (prefetch_addr_list[i] == 0) {
+            break;
+        }
+        PACKET test_packet;
+        test_packet.address = prefetch_addr_list[i] >> LOG2_BLOCK_SIZE;
+        test_packet.full_addr = prefetch_addr_list[i];
+        bool llc_hit = static_cast<CACHE*>(lower_level)->check_hit(&test_packet) != -1;
+        bool l2_hit = check_hit(&test_packet) != -1;
+        //cout << "addr: " << addr << ", cache_hit: " << int(cache_hit) << ", llc_hit: " << llc_hit << endl;
+        uint64_t md_in = addr;
+        if(llc_hit)
+            md_in = 0;
+        ++total_usage_count[addr];
+        if (!l2_hit && !llc_hit){
+           ++actual_usage_count[addr]; 
+        }
+        int ret = prefetch_line(pc, addr, prefetch_addr_list[i], FILL_L1, md_in);
+        if(ret)
+        {
+ //           cout << hex << addr << " " << prefetch_addr_list[i] << dec << endl;
+            prefetched++;
+            if(prefetched >= conf[cpu].degree)
+                break;
+        }
+    }
+
+    // Set cache assoc if dynamic
+    //cout << "LLC WAY: " << LLC_WAY << ", ASSOC: " << data[cpu].get_assoc() << endl;
+    unsigned total_assoc = 0;
+    for (unsigned mycpu = 0; mycpu < NUM_CPUS; ++mycpu) {
+        total_assoc += data[mycpu].get_assoc();
+    }
+    total_assoc /= NUM_CPUS;
+    // XXX: We only have everything in the same triage at the moment.
+//    total_assoc = data[cpu].get_assoc();
+    assert(total_assoc < LLC_WAY);
+    if (conf[cpu].repl != TRIAGE_REPL_PERFECT)
+        static_cast<CACHE*>(lower_level)->current_assoc = LLC_WAY - total_assoc;
+
+    //cout << total_assoc << " " << current_assoc << " " << data[cpu].get_assoc() << endl;
+}
+
+void CACHE::l1d_prefetcher_cache_fill(uint64_t addr, uint32_t set, uint32_t way, uint8_t prefetch, uint64_t evicted_addr, uint64_t metadata_in)
+{
+//    cpu = 0;
+    if(prefetch) {
+        uint64_t next_addr;
+        bool next_addr_exists = data[cpu].on_chip_data.get_next_addr(metadata_in, next_addr, 0, true);
+        //assert(next_addr_exists);
+//        cout << "Filled " << hex << addr << "  by " << metadata_in << " " << next_addr_exists << endl;
+    }
+}
+
+void CACHE::l1d_prefetcher_final_stats()
+{
+ //   cpu = 0;
+    cout << "CPU " << cpu << " TRIAGE Stats:" << endl;
+
+    data[cpu].print_stats();
+
+    std::map<uint64_t, uint64_t> total_pref_count;
+    std::map<uint64_t, uint64_t> actual_pref_count;
+    for (std::map<uint64_t, uint64_t>::iterator it = total_usage_count.begin(); it!=total_usage_count.end(); ++it) {
+        total_pref_count[it->second]++;
+    }
+    for (std::map<uint64_t, uint64_t>::iterator it = actual_usage_count.begin(); it!=actual_usage_count.end(); ++it) {
+        actual_pref_count[it->second]++;
+    }
+
+    cout << "Unique Addr Size: " << unique_addr.size() << endl;
+    cout << "Total Pref Count: " << endl;
+    for (unsigned i = 0; i < 100000; ++i) {
+        cout << i << ' ' <<  total_pref_count[i] << ' ' << actual_pref_count[i] << endl;
+    }
+
+}
+
+
+

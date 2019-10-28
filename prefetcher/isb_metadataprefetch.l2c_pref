@@ -1,0 +1,242 @@
+
+#include "isb.h"
+#include "cache.h"
+#include "bo_percore.h"
+
+pf_isb_conf_t *conf[NUM_CPUS];
+IsbPrefetcher *data[NUM_CPUS];
+uint64_t last_address[NUM_CPUS];
+
+uint64_t llc_miss_count = 0;
+uint64_t llc_hit_demand_count = 0;
+uint64_t llc_hit_prefetch_count = 0;
+
+//#define HYBRID
+//#define TRAIN_ON_NON_BO
+#define DEGREE 2
+#define MAX_ALLOWED_DEGREE 8
+
+#define ISB_FILL_LEVEL FILL_L2
+//#define ISB_FILL_LEVEL FILL_LLC
+
+void CACHE::l2c_prefetcher_initialize() 
+{
+    last_address[cpu] = 0;
+    cout << "ISB Init " << cpu << endl;
+    conf[cpu] = new pf_isb_conf_t;
+    conf[cpu]->lookahead = 1;
+    conf[cpu]->degree = 1;
+//    conf[cpu]->amc_size = 1024;
+//    conf[cpu]->amc_size = 2048;
+    conf[cpu]->amc_size = 4096;
+//    conf[cpu]->amc_size = 8192;
+//    conf[cpu]->amc_size = 16384;
+//    conf[cpu]->amc_size = 32768;
+//    conf[cpu]->amc_size = 65536;
+//    conf[cpu]->amc_size = 131072;
+//    conf[cpu]->amc_size = 262144;
+//    conf[cpu]->amc_size = 524288;
+//    conf[cpu]->amc_size = 1048576;
+//    conf[cpu]->amc_size = 2097152;
+//    conf[cpu]->amc_size = 4194304;
+    conf[cpu]->amc_assoc = 8;
+//    conf[cpu]->amc_assoc = 1024;
+    //conf[cpu]->repl_policy = ISB_REPL_TYPE_LRU; // LRU
+//    conf[cpu]->repl_policy = ISB_REPL_TYPE_TLBSYNC; // METAPREF
+    conf[cpu]->repl_policy = ISB_REPL_TYPE_BULKMETAPREF; // METAPREF
+//    conf[cpu]->repl_policy = ISB_REPL_TYPE_SRRIP; // SRRIP
+//    conf[cpu]->repl_policy = ISB_REPL_TYPE_BRRIP; // BRRIP
+//    conf[cpu]->repl_policy = ISB_REPL_TYPE_DRRIP; // DRRIP
+//    conf[cpu]->repl_policy = ISB_REPL_TYPE_HAWKEYE; // HAWKEYE
+//    conf[cpu]->repl_policy = ISB_REPL_TYPE_OPTGEN; // OPTGEN
+//    conf[cpu]->repl_policy = ISB_REPL_TYPE_PERFECT; // IDEAL
+    conf[cpu]->amc_repl_region_size = 16;
+    conf[cpu]->amc_repl_log_region_size = 4;
+    conf[cpu]->amc_metapref_degree = 1;
+    conf[cpu]->log_cacheblocksize = 6;
+    conf[cpu]->isb_miss_prefetch_hit_only = false;
+    conf[cpu]->prefetch_buffer_size = 128;
+//    conf[cpu]->prefetch_buffer_size = 0;
+    conf[cpu]->check_bandwidth = true;
+    conf[cpu]->isb_off_chip_ideal = false;
+    conf[cpu]->isb_off_chip_writeback = true;
+//    conf[cpu]->isb_off_chip_writeback = false;
+    conf[cpu]->count_off_chip_write_traffic = true;
+//    conf[cpu]->count_off_chip_write_traffic = false;
+    conf[cpu]->isb_off_chip_latency = 170;
+    conf[cpu]->isb_off_chip_fillers = 16;
+
+    conf[cpu]->bloom_region_shift_bits = 0;
+    conf[cpu]->bloom_capacity = 100000;
+    conf[cpu]->bloom_fprate = 0.50;
+
+    data[cpu] = new IsbPrefetcher(conf[cpu]);
+
+    data[cpu]->set_conf(conf[cpu]);
+    data[cpu]->ideal_bloom_filter.clear();
+
+#ifdef HYBRID
+    bo_l2c_prefetcher_initialize();
+#endif
+}
+
+
+uint64_t CACHE::l2c_prefetcher_operate(uint64_t addr, uint64_t pc, uint8_t cache_hit, uint8_t type, uint64_t metadata_in)
+{
+    if (!cache_hit) {
+//        cout << dec << pc << ' ' << addr << ' ' << endl;
+    }
+
+    if (type != LOAD)
+        return metadata_in;
+
+    if(ISB_FILL_LEVEL==FILL_LLC && cache_hit)
+        return metadata_in;
+#if 0
+    if (llc_hit_type == LLC_MISS) {
+        ++llc_miss_count;
+    } else if (llc_hit_type == LLC_HIT_DEMAND) {
+        ++llc_hit_demand_count;
+    } else {
+        ++llc_hit_prefetch_count;
+    }
+    if(llc_hit_type == LLC_HIT_DEMAND)
+        return metadata_in;
+#endif
+
+    addr = (addr >> 6) << 6;
+
+    if(addr == last_address[cpu])
+        return metadata_in;
+    last_address[cpu] = addr;
+
+#ifdef HYBRID
+    uint64_t bo_trigger_addr = 0;
+    uint64_t bo_target_offset = 0;
+    uint64_t bo_target_addr = 0;
+    bo_l2c_prefetcher_operate(addr, pc, cache_hit, type, this, &bo_trigger_addr, &bo_target_offset, 0);
+
+    if (bo_trigger_addr && bo_target_offset) {
+
+        for(unsigned int i=1; i<=conf[cpu]->degree; i++) {
+            bo_target_addr = bo_trigger_addr + (i*bo_target_offset); 
+            bo_issue_prefetcher(this, pc, bo_trigger_addr, bo_target_addr, ISB_FILL_LEVEL);
+        }
+
+//#ifdef TRAIN_ON_NON_BO
+//        return;
+//#endif
+    }
+#endif
+
+
+
+    int i;
+    uint64_t prefetch_addr_list[MAX_ALLOWED_DEGREE];
+    //if(pc == 0)
+    //   cpu = 0;
+
+    for (i = 0; i < MAX_ALLOWED_DEGREE; ++i) {
+        prefetch_addr_list[i] = 0;
+    }
+    data[cpu]->metadata_read_requests.clear();
+    data[cpu]->metadata_write_requests.clear();
+
+    /*
+       bool pref_hit = pf_info->hit_on_pf;
+       if (conf->isb_miss_prefetch_hit_only && cache_hit && !pref_hit) {
+       return;
+       }
+     */
+    data[cpu]->calculatePrefetch(addr, pc, cache_hit, prefetch_addr_list, MAX_ALLOWED_DEGREE);
+
+    uint64_t prefetched = 0;
+    for (i = 0; i < MAX_ALLOWED_DEGREE; ++i) {
+        if (prefetch_addr_list[i] == 0) {
+            break;
+        }
+        //cout << "[ISB] " << hex << prefetch_addr_list[i] << dec << endl;
+        int ret = prefetch_line(pc, addr, prefetch_addr_list[i], ISB_FILL_LEVEL, 0);
+        if(ret)
+        {
+            prefetched++;
+            if(prefetched >= conf[cpu]->degree)
+                break;
+        }
+    }
+
+    for(auto it=data[cpu]->metadata_read_requests.begin(); it != data[cpu]->metadata_read_requests.end(); it++)
+    {
+        //cout << "ISB: " << hex << data[cpu]->metadata_requests[i].phy_addr << " " << data[cpu]->metadata_requests[i].str_addr << dec << endl;
+        get_metadata(*it);
+    }
+
+    for(auto it=data[cpu]->metadata_write_requests.begin(); it != data[cpu]->metadata_write_requests.end(); it++)
+    {
+        //cout << "ISB: " << hex << data[cpu]->metadata_requests[i].phy_addr << " " << data[cpu]->metadata_requests[i].str_addr << dec << endl;
+        write_metadata(*it);
+    }
+
+    return metadata_in;
+}
+
+uint64_t CACHE::l2c_prefetcher_cache_fill(uint64_t addr, uint32_t set, uint32_t way, uint8_t prefetch, uint64_t evicted_addr, uint64_t metadata_in)
+{
+#ifdef HYBRID
+    bo_l2c_prefetcher_cache_fill(addr, set, way, prefetch, evicted_addr, this, 0);
+#endif
+    return metadata_in;
+}
+
+void CACHE::complete_metadata_req(uint64_t meta_data_addr)
+{
+    data[cpu]->prefetch_list.clear();
+    data[cpu]->metadata_read_requests.clear();
+    data[cpu]->metadata_write_requests.clear();
+
+
+    data[cpu]->complete_metadata_req(meta_data_addr);
+
+
+    uint64_t prefetched = 0;
+    for (uint32_t i = 0; i < data[cpu]->prefetch_list.size(); ++i) {
+        //cout << "[PF Buffer] " << hex << data[cpu]->prefetch_list[i] << dec << endl;
+        int ret = prefetch_line(0, 0, data[cpu]->prefetch_list[i], FILL_L2, 0);
+        if(ret)
+        {
+            prefetched++;
+            //if(prefetched >= degree)
+            //   break;
+        }
+    }
+
+    for(auto it=data[cpu]->metadata_read_requests.begin(); it != data[cpu]->metadata_read_requests.end(); it++)
+    {
+        //cout << "ISB: " << hex << data[cpu]->metadata_requests[i].phy_addr << " " << data[cpu]->metadata_requests[i].str_addr << dec << endl;
+        get_metadata(*it);
+    }
+
+    for(auto it=data[cpu]->metadata_write_requests.begin(); it != data[cpu]->metadata_write_requests.end(); it++)
+    {
+        //cout << "ISB: " << hex << data[cpu]->metadata_requests[i].phy_addr << " " << data[cpu]->metadata_requests[i].str_addr << dec << endl;
+        write_metadata(*it);
+    }
+}
+
+void CACHE::l2c_prefetcher_final_stats()
+{
+    cout << "LLC_MISS_COUNT: " << llc_miss_count << endl;
+    cout << "LLC_HIT_DEMAND_COUNT: " << llc_hit_demand_count << endl;
+    cout << "LLC_HIT_PREFETCH_COUNT: " << llc_hit_prefetch_count << endl;
+    data[cpu]->dump_stats();
+#ifdef HYBRID
+	bo_l2c_prefetcher_final_stats();
+#endif
+}
+
+//void CACHE::insert_metadata(uint32_t cpu, uint64_t phy_addr, uint32_t str_addr, uint8_t type)
+//{
+//    data[cpu]->insert_metadata(phy_addr, str_addr, (off_chip_req_type_t)type);
+//}
+
+

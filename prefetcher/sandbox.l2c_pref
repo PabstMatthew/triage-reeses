@@ -1,0 +1,134 @@
+#include <stdint.h>
+#include "cache.h"
+#include <set>
+
+#define DEGREE 1
+#define LOOKAHEAD 1
+#define NUM_OFFSETS 46
+int offsets[NUM_OFFSETS] = {1,-1,2,-2,3,-3,4,-4,5,-5,6,-6,7,-7,8,-8,9,-9,10,-10,11,-11,12,-12,13,-13,14,-14,15,-15,16,-16,18,-18,20,-20,24,-24,30,-30,32,-32,36,-36,40,-40};
+#define LOGLINE 6
+#define SAMEPAGE(lineaddr1,lineaddr2) ((((lineaddr1) ^ (lineaddr2)) >> 6) == 0)
+
+#define DEFAULT_OFFSET 1
+#define SCORE_MAX 31
+#define ROUND_MAX 100
+#define BAD_SCORE 10
+
+struct SANDBOX
+{
+    uint64_t best_offset;
+
+    std::set<uint64_t> prefetch_sandbox;
+
+    //Taken from Michaud's BO code
+    struct offsets_scores {
+        int score[NUM_OFFSETS];    // log2 SCORE_MAX = 5 bits per entry
+        int max_score;          // log2 SCORE_MAX = 5 bits
+        int best_offset;        // 7 bits (6-bit value + 1 sign bit)
+        int round;              // log2 ROUND_MAX = 7 bits
+        int curr_index;        // log2 NOFFSETS = 6 bits
+    } os;                     // 46x5+5+7+7+6 = 255 bits
+
+
+    void reset()
+    {
+        prefetch_sandbox.clear();
+        int i;
+        for (i=0; i<NUM_OFFSETS; i++) {
+            os.score[i] = 0;
+        }
+        os.max_score = 0;
+        os.best_offset = 0;
+        os.round = 0;
+        os.curr_index = 0;
+    }
+
+    void learn_best_offset(uint64_t lineaddr)
+    {
+        int testoffset = offsets[os.curr_index];
+        uint64_t testlineaddr = lineaddr - testoffset;
+
+        if (SAMEPAGE(lineaddr,testlineaddr) && sandbox_hit(testlineaddr)) {
+            // the current line would likely have been prefetched successfully with that offset
+            // ==> increment the score 
+            os.score[os.curr_index]++;
+            if (os.score[os.curr_index] >= os.max_score) {
+                os.max_score = os.score[os.curr_index];
+                os.best_offset = testoffset;
+            }
+        }
+
+        if (os.curr_index == (NUM_OFFSETS-1)) {
+            // one round finished
+            os.round++;
+
+            if ((os.max_score == SCORE_MAX) || (os.round == ROUND_MAX)) {
+                // learning phase is finished, update the prefetch offset
+                best_offset = (os.best_offset != 0)? os.best_offset : DEFAULT_OFFSET;
+
+                if (os.max_score <= BAD_SCORE) {
+                    // prefetch accuracy is likely to be very low ==> turn the prefetch off 
+                    best_offset = 0;
+                }
+                // new learning phase starts
+                reset();
+                cout << "BEST OFFSET: " << best_offset << endl;
+                return;
+            }
+        }
+    
+        os.curr_index = (os.curr_index + 1)%NUM_OFFSETS;
+
+    }
+
+    void add_to_sandbox(uint64_t demand_addr)
+    {
+        prefetch_sandbox.insert(demand_addr);
+    }
+
+    bool sandbox_hit(uint64_t addr)
+    {
+        bool found = false;
+        if(prefetch_sandbox.find(addr) != prefetch_sandbox.end())
+            found = true;
+
+        return found;    
+    }
+};
+
+SANDBOX sandbox[NUM_CPUS];
+
+void CACHE::l2c_prefetcher_initialize() {
+    cout << "CPU " << cpu << " L2C Sandbox prefetcher" << endl;
+    sandbox[cpu].reset();
+}
+
+uint64_t CACHE::l2c_prefetcher_operate(uint64_t addr, uint64_t pc, uint8_t cache_hit, uint8_t type, uint64_t metadata_in)
+{
+    if(type == WRITEBACK || type == PREFETCH)
+        return metadata_in;
+
+    uint64_t lineaddr = (addr >> LOGLINE);
+    sandbox[cpu].learn_best_offset(lineaddr);
+    sandbox[cpu].add_to_sandbox(lineaddr);
+
+    if(sandbox[cpu].best_offset != 0)
+    {
+        for(int i=1; i<=DEGREE; i++)
+        {
+            uint64_t prefetch_addr = ((lineaddr + (i+LOOKAHEAD-1)*sandbox[cpu].best_offset) << 6);    
+            prefetch_line(pc, addr, prefetch_addr, FILL_LLC, 0);
+        }
+    }
+
+    return metadata_in;
+}
+
+uint64_t CACHE::l2c_prefetcher_cache_fill(uint64_t addr, uint32_t set, uint32_t way, uint8_t prefetch, uint64_t evicted_addr, uint64_t metadata_in)
+{
+    return metadata_in;
+}
+
+void CACHE::l2c_prefetcher_final_stats() {
+}
+
