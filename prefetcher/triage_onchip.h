@@ -50,8 +50,7 @@ class TriageRepl {
                 TriageReplType type, uint64_t assoc, bool use_dynamic_assoc);
 };
 
-class TriageReplLRU : public TriageRepl
-{
+class TriageReplLRU : public TriageRepl {
     public:
         TriageReplLRU(std::vector<std::map<uint64_t, TriageOnchipEntry> >* entry_list);
         void addEntry(uint64_t set_id, uint64_t addr, uint64_t pc);
@@ -63,11 +62,10 @@ class TriageReplLRU : public TriageRepl
 #define HAWKEYE_SAMPLE_ASSOC_COUNT 2
 #define HAWKEYE_EPOCH_LENGTH 1000
 extern unsigned hawkeye_sample_assoc[];
-class TriageReplHawkeye : public TriageRepl
-{
+class TriageReplHawkeye : public TriageRepl {
     unsigned max_rrpv;
     std::vector<uint64_t> optgen_mytimer;
-//    std::vector<OPTgen> optgen;
+    //std::vector<OPTgen> optgen;
     unsigned dynamic_optgen_choice;
     std::vector<std::vector<OPTgen> > sample_optgen;
     std::map<uint64_t, ADDR_INFO> optgen_addr_history;
@@ -89,8 +87,7 @@ class TriageReplHawkeye : public TriageRepl
         void print_stats();
 };
 
-class TriageReplPerfect : public TriageRepl
-{
+class TriageReplPerfect : public TriageRepl {
     public:
         TriageReplPerfect(std::vector<std::map<uint64_t, TriageOnchipEntry> >* entry_list);
         void addEntry(uint64_t set_id, uint64_t addr, uint64_t pc);

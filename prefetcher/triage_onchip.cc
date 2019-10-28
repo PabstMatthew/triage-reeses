@@ -14,38 +14,31 @@ using namespace std;
 #define debug_cout if (0) cerr
 #endif
 
-TriageOnchipEntry::TriageOnchipEntry()
-{
+TriageOnchipEntry::TriageOnchipEntry() {
     init();
 }
 
-void TriageOnchipEntry::init()
-{
-    for (unsigned i = 0; i < ONCHIP_LINE_SIZE; ++i) {
+void TriageOnchipEntry::init() {
+    for (uint32_t i = 0; i < ONCHIP_LINE_SIZE; i++) {
         next_addr[i] = INVALID_ADDR;
         confidence[i] = 3;
         valid[i] = false;
     }
 }
 
-void TriageOnchipEntry::increase_confidence(unsigned offset)
-{
+void TriageOnchipEntry::increase_confidence(uint32_t offset) {
     if (confidence[offset] < 3)
-        ++confidence[offset];
+        confidence[offset]++;
 }
 
-void TriageOnchipEntry::decrease_confidence(unsigned offset)
-{
+void TriageOnchipEntry::decrease_confidence(uint32_t offset) {
     if (confidence[offset] > 0)
-        --confidence[offset];
+        confidence[offset]--;
 }
 
-TriageOnchip::TriageOnchip()
-{
-}
+TriageOnchip::TriageOnchip() {}
 
-void TriageOnchip::set_conf(TriageConfig *config)
-{
+void TriageOnchip::set_conf(TriageConfig *config) {
     assoc = config->on_chip_assoc;
     num_sets = config->on_chip_set;
     num_sets = num_sets >> ONCHIP_LINE_SHIFT;
@@ -58,28 +51,24 @@ void TriageOnchip::set_conf(TriageConfig *config)
     cout << "Num Sets: " << num_sets << endl;
 }
 
-uint64_t TriageOnchip::get_line_offset(uint64_t addr)
-{
-    uint64_t line_offset = (addr>>6) & (ONCHIP_LINE_SIZE-1);
+uint64_t TriageOnchip::get_line_offset(uint64_t addr) {
+    uint64_t line_offset = addr & (ONCHIP_LINE_SIZE-1);
     return line_offset;
 }
 
 
-uint64_t TriageOnchip::get_set_id(uint64_t addr)
-{
-    uint64_t set_id = (addr>>6>>ONCHIP_LINE_SHIFT) & index_mask;
-    debug_cout << "num_sets: " << num_sets << ", index_mask: " << index_mask
-        << ", set_id: " << set_id <<endl;
+uint64_t TriageOnchip::get_set_id(uint64_t addr) {
+    uint64_t set_id = (addr >> ONCHIP_LINE_SHIFT) & index_mask;
+    debug_cout << "num_sets: " << num_sets << ", index_mask: " << index_mask << ", set_id: " << set_id <<endl;
     assert(set_id < num_sets);
     return set_id;
 }
 
-int TriageOnchip::increase_confidence(uint64_t addr)
-{
+int TriageOnchip::increase_confidence(uint64_t addr) {
     uint64_t set_id = get_set_id(addr);
     assert(set_id < num_sets);
     uint64_t line_offset = get_line_offset(addr);
-    uint64_t tag = addr >> 6 >> ONCHIP_LINE_SHIFT;
+    uint64_t tag = addr >> ONCHIP_LINE_SHIFT;
     map<uint64_t, TriageOnchipEntry>& entry_map = entry_list[set_id];
     map<uint64_t, TriageOnchipEntry>::iterator it = entry_map.find(tag);
 
@@ -87,12 +76,11 @@ int TriageOnchip::increase_confidence(uint64_t addr)
     return it->second.confidence[line_offset];
 }
 
-int TriageOnchip::decrease_confidence(uint64_t addr)
-{
+int TriageOnchip::decrease_confidence(uint64_t addr) {
     uint64_t set_id = get_set_id(addr);
     assert(set_id < num_sets);
     uint64_t line_offset = get_line_offset(addr);
-    uint64_t tag = addr >> 6 >> ONCHIP_LINE_SHIFT;
+    uint64_t tag = addr >> ONCHIP_LINE_SHIFT;
     map<uint64_t, TriageOnchipEntry>& entry_map = entry_list[set_id];
     map<uint64_t, TriageOnchipEntry>::iterator it = entry_map.find(tag);
 
@@ -100,15 +88,14 @@ int TriageOnchip::decrease_confidence(uint64_t addr)
     return it->second.confidence[line_offset];
 }
 
-void TriageOnchip::update(uint64_t prev_addr, uint64_t next_addr, uint64_t pc, bool update_repl)
-{
+void TriageOnchip::update(uint64_t prev_addr, uint64_t next_addr, uint64_t pc, bool update_repl) {
     if (use_dynamic_assoc) {
         assoc = repl->get_assoc();
     }
     uint64_t set_id = get_set_id(prev_addr);
     assert(set_id < num_sets);
     uint64_t line_offset = get_line_offset(prev_addr);
-    uint64_t tag = prev_addr >> 6 >> ONCHIP_LINE_SHIFT;
+    uint64_t tag = prev_addr >> ONCHIP_LINE_SHIFT;
     map<uint64_t, TriageOnchipEntry>& entry_map = entry_list[set_id];
     map<uint64_t, TriageOnchipEntry>::iterator it = entry_map.find(tag);
     debug_cout << hex << "update prev_addr: " << prev_addr
@@ -162,16 +149,14 @@ void TriageOnchip::update(uint64_t prev_addr, uint64_t next_addr, uint64_t pc, b
     assert(entry_map.size() <= assoc);
 }
 
-bool TriageOnchip::get_next_addr(uint64_t prev_addr, uint64_t &next_addr,
-        uint64_t pc, bool update_stats)
-{
+bool TriageOnchip::get_next_addr(uint64_t prev_addr, uint64_t &next_addr, uint64_t pc, bool update_stats) {
     if (use_dynamic_assoc) {
         assoc = repl->get_assoc();
     }
     uint64_t set_id = get_set_id(prev_addr);
     assert(set_id < num_sets);
     uint64_t line_offset = get_line_offset(prev_addr);
-    uint64_t tag = prev_addr >> 6 >> ONCHIP_LINE_SHIFT;
+    uint64_t tag = prev_addr >> ONCHIP_LINE_SHIFT;
     map<uint64_t, TriageOnchipEntry>& entry_map = entry_list[set_id];
     debug_cout << hex << "get_next_addr prev_addr: " << prev_addr
         << ", set_id: " << set_id

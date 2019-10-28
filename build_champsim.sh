@@ -1,7 +1,6 @@
 #!/bin/bash
 
-#if [ "$#" -ne 6 ]; then
-if [ "$#" -ne 7 ]; then
+if [ "$#" -ne 6 ]; then
     echo "Illegal number of parameters"
     echo "Usage: ./build_champsim.sh [branch_pred] [l1d_pref] [l2c_pref] [llc_pref] [llc_repl] [num_core] [assoc_config]"
     exit 1
@@ -14,8 +13,6 @@ L2C_PREFETCHER=$3   # prefetcher/*.l2c_pref
 LLC_PREFETCHER=$4   # prefetcher/*.llc_pref
 LLC_REPLACEMENT=$5  # replacement/*.llc_repl
 NUM_CORE=$6         # tested up to 8-core system
-ASSOC_CONFIG=$7
-
 
 ############## Some useful macros ###############
 BOLD=$(tput bold)
@@ -91,9 +88,8 @@ cp replacement/${LLC_REPLACEMENT}.llc_repl replacement/llc_replacement.cc
 # Build
 mkdir -p bin
 rm -f bin/champsim
-CFLAGS="-D ASSOC $ASSOC_CONFIG"
 make clean
-make CFLAGS="-DASSOC_CONFIG=${ASSOC_CONFIG}"
+make
 
 # Sanity check
 echo ""
