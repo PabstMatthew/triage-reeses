@@ -1,0 +1,23 @@
+
+#include "cache.h"
+#include "spp.h"
+
+void CACHE::l2c_prefetcher_initialize() {
+    spp_prefetcher_initialize(this);
+}
+
+uint64_t CACHE::l2c_prefetcher_operate(uint64_t addr, uint64_t pc, uint8_t cache_hit, uint8_t type, uint64_t metadata_in) {
+    return spp_prefetcher_operate(addr, pc, cache_hit, type, metadata_in, this);
+}
+
+uint64_t CACHE::l2c_prefetcher_cache_fill(uint64_t addr, uint32_t set, uint32_t way, uint8_t prefetch, uint64_t evicted_addr, uint64_t metadata_in) {
+    return spp_prefetcher_cache_fill(addr, set, way, prefetch, evicted_addr, metadata_in, this);
+}
+
+void CACHE::l2c_prefetcher_final_stats() {
+    return spp_prefetcher_final_stats(this);
+}
+
+void CACHE::complete_metadata_req(uint64_t meta_data_addr) {}
+
+
