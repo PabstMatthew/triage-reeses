@@ -76,7 +76,6 @@ void Triage::train(uint64_t pc, uint64_t addr, bool cache_hit) {
                 new_entry.addr = addr;
             }
             
-train:
             Metadata next_entry = on_chip_data.get_next_entry(trigger_addr, pc, false);
             if (!next_entry.valid) {
                 // no valid correlation for trigger_addr yet
@@ -99,9 +98,27 @@ train:
             if (new_entry.spatial) {
                 // create a link to the next address, if necessary
                 trigger_addr = new_entry.next_spatial.last_addr;
-                new_entry.spatial = false;
-                new_entry.addr = addr;
-                goto train;
+                Metadata link_entry;
+                link_entry.set_addr(addr);
+
+                next_entry = on_chip_data.get_next_entry(trigger_addr, pc, false);
+                if (!next_entry.valid) {
+                    // no valid correlation for trigger_addr yet
+                    on_chip_data.update(trigger_addr, link_entry, pc, true);
+                    no_next_addr++;
+                } else if (next_entry != link_entry) {
+                    // existing correlation doesn't match the new one
+                    int conf = on_chip_data.decrease_confidence(trigger_addr);
+                    conf_dec_retain++;
+                    if (conf == 0) {
+                        conf_dec_update++;
+                        on_chip_data.update(trigger_addr, link_entry, pc, false);
+                    }
+                } else {
+                    // existing correlation matches this one
+                    on_chip_data.increase_confidence(trigger_addr);
+                    conf_inc++;
+                }
             }
         }
     } else {
