@@ -30,6 +30,7 @@ void triage_prefetcher_initialize(CACHE *cache) {
     std::cout << "CPU " << cpu << " assoc: " << conf[cpu].on_chip_assoc << std::endl;
 
     data[cpu].set_conf(&conf[cpu]);
+    data[cpu].test();
 }
 
 uint64_t triage_prefetcher_operate(uint64_t addr, uint64_t pc, uint8_t cache_hit, uint8_t type, uint64_t metadata_in, CACHE *cache) {

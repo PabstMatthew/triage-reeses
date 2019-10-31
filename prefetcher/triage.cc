@@ -14,6 +14,17 @@ using namespace std;
 #define debug_cout if (0) cerr
 #endif
 
+void Triage::test() {
+    train(0, 0, 0);
+    train(0, 1, 0);
+    train(0, 4, 0);
+
+    Metadata c1 = on_chip_data.get_next_entry(0, 0, false);
+    assert(c1.spatial);
+    assert(c1.next_spatial.predict(0).size() == 1);
+    assert(c1.next_spatial.predict(0)[0] == 1);
+}
+
 Triage::Triage() {
     trigger_count = 0;
     predict_count = 0;
@@ -53,26 +64,44 @@ void Triage::train(uint64_t pc, uint64_t addr, bool cache_hit) {
             // New Addr
             new_addr++;
 
+            uint64_t trigger_addr;
             if (is_spatial) {
                 spatial += new_entry.next_spatial.size();
+                // if spatial, new_entry contains the real trigger addr
+                trigger_addr = new_entry.addr;
             } else {
                 temporal++;
+                // if temporal, correlate old address with new one
+                trigger_addr = new_entry.addr;
+                new_entry.addr = addr;
             }
             
-            Metadata next_entry = on_chip_data.get_next_entry(addr, pc, false);
+train:
+            Metadata next_entry = on_chip_data.get_next_entry(trigger_addr, pc, false);
             if (!next_entry.valid) {
-                on_chip_data.update(addr, new_entry, pc, true);
+                // no valid correlation for trigger_addr yet
+                on_chip_data.update(trigger_addr, new_entry, pc, true);
                 no_next_addr++;
             } else if (next_entry != new_entry) {
-                int conf = on_chip_data.decrease_confidence(addr);
+                // existing correlation doesn't match the new one
+                int conf = on_chip_data.decrease_confidence(trigger_addr);
                 conf_dec_retain++;
                 if (conf == 0) {
                     conf_dec_update++;
-                    on_chip_data.update(addr, new_entry, pc, false);
+                    on_chip_data.update(trigger_addr, new_entry, pc, false);
                 }
             } else {
-                on_chip_data.increase_confidence(addr);
+                // existing correlation matches this one
+                on_chip_data.increase_confidence(trigger_addr);
                 conf_inc++;
+            }
+
+            if (new_entry.spatial) {
+                // create a link to the next address, if necessary
+                trigger_addr = new_entry.next_spatial.last_addr;
+                new_entry.spatial = false;
+                new_entry.addr = addr;
+                goto train;
             }
         }
     } else {

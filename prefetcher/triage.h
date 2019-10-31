@@ -40,6 +40,7 @@ class Triage {
     public:
     TriageOnchip on_chip_data;
         Triage();
+        void test();
         void set_conf(TriageConfig *config);
         void calculatePrefetch(uint64_t pc, uint64_t addr,
                 bool cache_hit, uint64_t *prefetch_list,
