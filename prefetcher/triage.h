@@ -32,6 +32,7 @@ class Triage {
     uint64_t same_addr, new_addr, new_stream;
     uint64_t no_next_addr, conf_dec_retain, conf_dec_update, conf_inc;
     uint64_t predict_count, trigger_count;
+    uint64_t spatial, temporal;
     uint64_t total_assoc;
 
     std::vector<uint64_t> next_addr_list;

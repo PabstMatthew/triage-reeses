@@ -4,7 +4,7 @@
 #include <map>
 
 #define TRIAGE_FILL_LEVEL FILL_L2
-#define MAX_ALLOWED_DEGREE 8
+#define MAX_ALLOWED_DEGREE 64
 
 TriageConfig conf[NUM_CPUS];
 Triage data[NUM_CPUS];
@@ -80,8 +80,6 @@ uint64_t triage_prefetcher_operate(uint64_t addr, uint64_t pc, uint8_t cache_hit
         // check if prefetch actually issued
         if (cache->prefetch_line(pc, addr, target, TRIAGE_FILL_LEVEL, md_in)) {
             prefetched++;
-            if (prefetched >= conf[cpu].degree)
-                break;
         }
     }
 
@@ -102,8 +100,7 @@ uint64_t triage_prefetcher_operate(uint64_t addr, uint64_t pc, uint8_t cache_hit
 uint64_t triage_prefetcher_cache_fill(uint64_t addr, uint32_t set, uint32_t way, uint8_t prefetch, uint64_t evicted_addr, uint64_t metadata_in, CACHE *cache) {
     uint32_t cpu = cache->cpu;
     if (prefetch) {
-        uint64_t next_addr;
-        bool next_addr_exists = data[cpu].on_chip_data.get_next_addr(metadata_in, next_addr, 0, true);
+        Metadata next_entry = data[cpu].on_chip_data.get_next_entry(metadata_in, 0, true);
         //cout << "Filled " << hex << addr << "  by " << metadata_in << " " << next_addr_exists << endl;
     }
     return metadata_in;

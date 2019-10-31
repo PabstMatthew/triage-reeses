@@ -5,6 +5,7 @@
 #include <map>
 #include <set>
 #include <stdint.h>
+#include "triage_training_unit.h"
 #include "optgen_simple.h"
 #include "isb_hawkeye_predictor.h"
 
@@ -21,7 +22,8 @@ enum TriageReplType {
 };
 
 struct TriageOnchipEntry {
-    uint64_t next_addr[ONCHIP_LINE_SIZE];
+    Metadata metadata[ONCHIP_LINE_SIZE];
+
     int confidence[ONCHIP_LINE_SIZE];
     bool valid[ONCHIP_LINE_SIZE];
     // Used for replacement policy, it is rrpv for rrpv-based replacement
@@ -109,8 +111,8 @@ class TriageOnchip {
         TriageOnchip();
         void set_conf(TriageConfig *config);
 
-        void update(uint64_t prev_addr, uint64_t next_addr, uint64_t pc, bool update_repl);
-        bool get_next_addr(uint64_t prev_addr, uint64_t &next_addr, uint64_t pc, bool update_stats);
+        void update(uint64_t prev_addr, Metadata next_entry, uint64_t pc, bool update_repl);
+        Metadata get_next_entry(uint64_t prev_addr, uint64_t pc, bool update_stats);
         int increase_confidence(uint64_t addr);
         int decrease_confidence(uint64_t addr);
 

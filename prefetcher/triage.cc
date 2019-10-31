@@ -25,6 +25,8 @@ Triage::Triage() {
     conf_inc = 0;
     new_stream = 0;
     total_assoc = 0;
+    spatial = 0;
+    temporal = 0;
 }
 
 void Triage::set_conf(TriageConfig *config) {
@@ -40,31 +42,36 @@ void Triage::train(uint64_t pc, uint64_t addr, bool cache_hit) {
         training_unit.set_addr(pc, addr);
         return;
     }
-    uint64_t prev_addr, next_addr;
-    bool prev_addr_exist = training_unit.get_last_addr(pc, prev_addr);
-    if (prev_addr_exist) {
-        if (prev_addr == addr) {
+    Metadata new_entry = training_unit.set_addr(pc, addr);
+    if (new_entry.valid) {
+        bool is_spatial = new_entry.spatial;
+        if (!is_spatial && new_entry.addr == addr) {
             // Same Addr
-            debug_cout << hex << "Same Addr: " << prev_addr << ", " << addr <<endl;
+            debug_cout << hex << "Same Addr: " << new_entry.addr << ", " << addr <<endl;
             same_addr++;
         } else {
             // New Addr
-            debug_cout << hex << "New Addr: " << prev_addr << ", " << addr <<endl;
             new_addr++;
 
-            bool next_addr_exists = on_chip_data.get_next_addr(prev_addr, next_addr, pc, false);
-            if (!next_addr_exists) {
-                on_chip_data.update(prev_addr, addr, pc, true);
+            if (is_spatial) {
+                spatial += new_entry.next_spatial.size();
+            } else {
+                temporal++;
+            }
+            
+            Metadata next_entry = on_chip_data.get_next_entry(addr, pc, false);
+            if (!next_entry.valid) {
+                on_chip_data.update(addr, new_entry, pc, true);
                 no_next_addr++;
-            } else if (next_addr != addr) {
-                int conf = on_chip_data.decrease_confidence(prev_addr);
+            } else if (next_entry != new_entry) {
+                int conf = on_chip_data.decrease_confidence(addr);
                 conf_dec_retain++;
                 if (conf == 0) {
                     conf_dec_update++;
-                    on_chip_data.update(prev_addr, addr, pc, false);
+                    on_chip_data.update(addr, new_entry, pc, false);
                 }
             } else {
-                on_chip_data.increase_confidence(prev_addr);
+                on_chip_data.increase_confidence(addr);
                 conf_inc++;
             }
         }
@@ -73,18 +80,25 @@ void Triage::train(uint64_t pc, uint64_t addr, bool cache_hit) {
         debug_cout << hex << "StreamHead: " << addr <<endl;
         new_stream++;
     }
-
-    training_unit.set_addr(pc, addr);
 }
 
 void Triage::predict(uint64_t pc, uint64_t addr, bool cache_hit) {
-    uint64_t next_addr;
-    bool next_addr_exist = on_chip_data.get_next_addr(addr, next_addr, pc, false);
-    if (next_addr_exist) {
-        debug_cout << hex << "Predict: " << addr << " " << next_addr << dec << endl;
-        predict_count++;
-        next_addr_list.push_back(next_addr);
-        assert(next_addr != addr);
+    Metadata next_entry = on_chip_data.get_next_entry(addr, pc, false);
+    if (next_entry.valid) {
+        if (next_entry.spatial) {
+            for (uint64_t pred : next_entry.next_spatial.predict(addr)) {
+                debug_cout << hex << "Predict: " << addr << " " << pred << dec << endl;
+                predict_count++;
+                next_addr_list.push_back(pred);
+                assert(pred != addr);
+            }
+        } else {
+            uint64_t next_addr = next_entry.addr;
+            debug_cout << hex << "Predict: " << addr << " " << next_addr << dec << endl;
+            predict_count++;
+            next_addr_list.push_back(next_addr);
+            assert(next_addr != addr);
+        }
     }
 }
 
@@ -109,7 +123,7 @@ void Triage::calculatePrefetch(uint64_t pc, uint64_t addr, bool cache_hit, uint6
     // Train
     train(pc, addr, cache_hit);
 
-    for (size_t i = 0; i < degree && i < next_addr_list.size(); i++)
+    for (size_t i = 0; i < next_addr_list.size(); i++)
         prefetch_list[i] = next_addr_list[i];
 }
 
@@ -128,6 +142,8 @@ void Triage::print_stats() {
     cout << "conf_dec_update=" << conf_dec_update <<endl;
     cout << "conf_inc=" << conf_inc <<endl;
     cout << "total_assoc=" << total_assoc <<endl;
+    cout << "spatial=" << spatial << endl;
+    cout << "temporal=" << temporal << endl;
 
     on_chip_data.print_stats();
 }
