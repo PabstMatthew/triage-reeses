@@ -9,6 +9,8 @@
 #include "triage_training_unit.h"
 #include "triage_onchip.h"
 
+#define COMPRESS_METADATA true
+
 struct TriageConfig {
     int lookahead;
     int degree;

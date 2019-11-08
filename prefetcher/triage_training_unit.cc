@@ -35,7 +35,8 @@ Metadata TriageTrainingUnit::set_addr(uint64_t pc, uint64_t addr) {
                 entry.in_spatial = false;
                 entry.trigger_addr = addr;
             }
-        } else if (delta >= -MAX_DELTA && delta < MAX_DELTA && 
+        } else if (COMPRESS_METADATA && 
+                  delta >= -MAX_DELTA && delta < MAX_DELTA && 
                   (addr >> LOG2_REGION_SIZE == entry.trigger_addr >> LOG2_REGION_SIZE)) {
             // creating new spatial
             entry.in_spatial = true;

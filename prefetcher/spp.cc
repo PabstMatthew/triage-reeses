@@ -8,7 +8,7 @@ GLOBAL_REGISTER GHR;
 
 void spp_prefetcher_initialize(CACHE *cache) {}
 
-uint32_t spp_prefetcher_operate(uint64_t addr, uint64_t ip, uint8_t cache_hit, uint8_t type, uint64_t metadata_in, CACHE *cache) {
+uint32_t spp_prefetcher_operate(uint64_t addr, uint64_t ip, uint8_t cache_hit, uint8_t type, uint64_t metadata_in, CACHE *cache, uint32_t FILL_THRESHOLD=90) {
     uint64_t page = addr >> LOG2_PAGE_SIZE;
     uint32_t page_offset = (addr >> LOG2_BLOCK_SIZE) & (PAGE_SIZE / BLOCK_SIZE - 1),
              last_sig = 0,

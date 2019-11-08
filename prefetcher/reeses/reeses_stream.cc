@@ -61,7 +61,7 @@ void PrefetchStream::prefetch(size_t index) {
         StreamEntry &cur = stream_buffer.at(i);
         if (!cur.issued) {
             address target = cur.addr << LOG2_BLOCK_SIZE;
-            if (cache->prefetch_line(id, target, target, FILL_LLC))
+            if (cache->prefetch_line(id, target, target, FILL_LLC, 0))
                 prefetcher->stats["reeses_issues"] += 1;
             cur.issued = true;
         }

@@ -37,7 +37,6 @@
 #define REMAINDER_BIT 6
 #define HASH_BIT (QUOTIENT_BIT + REMAINDER_BIT + 1)
 #define FILTER_SET (1 << QUOTIENT_BIT)
-#define FILL_THRESHOLD 90
 #define PF_THRESHOLD 25
 
 // Global register parameters
@@ -157,7 +156,7 @@ class GLOBAL_REGISTER {
     uint32_t check_entry(uint32_t page_offset);
 };
 
-uint32_t spp_prefetcher_operate(uint64_t addr, uint64_t ip, uint8_t cache_hit, uint8_t type, uint64_t metadata_in, CACHE *cache);
+uint32_t spp_prefetcher_operate(uint64_t addr, uint64_t ip, uint8_t cache_hit, uint8_t type, uint64_t metadata_in, CACHE *cache, uint32_t FILL_THRESHOLD);
 void spp_prefetcher_initialize(CACHE *cache); 
 uint32_t spp_prefetcher_cache_fill(uint64_t addr, uint32_t set, uint32_t match, uint8_t prefetch, uint64_t evicted_addr, uint64_t metadata_in, CACHE *cache);
 void spp_prefetcher_final_stats(CACHE *cache);

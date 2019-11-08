@@ -14,7 +14,7 @@ extern UNCORE uncore;
 namespace reeses {
 
 void ReesesPrefetcher::initialize(CACHE *target_cache, bool footprint) {
-    spp_prefetcher_initialize();
+    spp_prefetcher_initialize(target_cache);
     cache = target_cache;
     tu = TrainingUnit(footprint);
     offset_cache = OffsetCache();
@@ -68,7 +68,7 @@ void ReesesPrefetcher::operate(address addr, pc cur_pc, bool cache_hit, uint8_t 
     }
 
     if (!NO_COMPULSORY_PF && !str_addr_exists)
-        spp_prefetcher_operate(addr, cur_pc, cache_hit, type, cache, threshold);
+        spp_prefetcher_operate(addr, cur_pc, cache_hit, type, 0, cache, threshold);
 
     // only consider demand misses 
     if (type != LOAD || cache_hit)
@@ -115,14 +115,14 @@ void ReesesPrefetcher::operate(address addr, pc cur_pc, bool cache_hit, uint8_t 
     // issue metadata requests
     D(cout << "\tissuing metadata requests" << endl;)
     for (address metadata_addr : metadata_read_requests)
-        cache->read_metadata(metadata_addr);
+        cache->get_metadata(metadata_addr);
     
     for (address metadata_addr : metadata_write_requests)
         cache->write_metadata(metadata_addr);
 }
 
 void ReesesPrefetcher::cache_fill(address addr, uint32_t set, uint32_t way, uint8_t prefetch, uint64_t evicted_addr) {
-    spp_prefetcher_cache_fill(addr, set, way, prefetch, evicted_addr);
+    spp_prefetcher_cache_fill(addr, set, way, prefetch, evicted_addr, 0, cache);
 }
 
 void ReesesPrefetcher::final_stats() { 
@@ -266,7 +266,7 @@ void ReesesPrefetcher::complete_metadata_req(address metadata_addr) {
     
     // issue metadata requests
     for (address metadata_addr : metadata_read_requests)
-        cache->read_metadata(metadata_addr);
+        cache->get_metadata(metadata_addr);
     
     for (address metadata_addr : metadata_write_requests)
         cache->write_metadata(metadata_addr);
