@@ -10,4 +10,5 @@ prefetcher/l2c_prefetcher.cc
 prefetcher/l1d_prefetcher.cc
 replacement/llc_replacement.cc
 cloudsuite_param.h
+tags
 
